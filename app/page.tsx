@@ -1,51 +1,165 @@
-import Link from "next/link";
-import SafetyNotice from "@/components/SafetyNotice";
+"use client";
 
-export default function HomePage() {
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatMessage, TutorSettings } from "@/types/chat";
+import { DEFAULT_SETTINGS } from "@/lib/tutorPrompt";
+import { parseTurn } from "@/lib/parseFeedback";
+import {
+  clearMessages,
+  getMessages,
+  getSettings,
+  saveMessages,
+  saveSettings,
+} from "@/lib/storage";
+import { useTts } from "@/lib/useSpeech";
+import Toolbar from "@/components/Toolbar";
+import MessageList from "@/components/MessageList";
+import Composer from "@/components/Composer";
+
+export default function TutorPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [settings, setSettings] = useState<TutorSettings>(DEFAULT_SETTINGS);
+  const [streaming, setStreaming] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const tts = useTts();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const startedRef = useRef(false);
+
+  /** Call the tutor API with the given history and stream the reply in. */
+  const runTutor = useCallback(
+    async (history: ChatMessage[]) => {
+      setLoading(true);
+      setError(null);
+      setStreaming("");
+      let acc = "";
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            messages: history,
+            level: settingsRef.current.level,
+            topic: settingsRef.current.topic,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error ?? `サーバーエラー (${res.status})`);
+        }
+        if (!res.body) throw new Error("応答を受信できませんでした。");
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          acc += decoder.decode(value, { stream: true });
+          setStreaming(acc);
+        }
+
+        const errIdx = acc.indexOf("[ERROR]");
+        if (errIdx !== -1) {
+          const before = acc.slice(0, errIdx).trim();
+          if (before) {
+            const finalized = [
+              ...history,
+              { role: "assistant" as const, content: before },
+            ];
+            setMessages(finalized);
+            saveMessages(finalized);
+          }
+          throw new Error(acc.slice(errIdx + 7).trim() || "エラーが発生しました。");
+        }
+
+        const finalized = [
+          ...history,
+          { role: "assistant" as const, content: acc },
+        ];
+        setMessages(finalized);
+        saveMessages(finalized);
+
+        if (settingsRef.current.autoSpeak && tts.supported) {
+          const { reply } = parseTurn(acc);
+          if (reply) tts.speak(reply);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "エラーが発生しました。");
+      } finally {
+        setStreaming(null);
+        setLoading(false);
+      }
+    },
+    [tts],
+  );
+
+  // Load persisted state on mount, and open the conversation if it's empty.
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    const saved = getSettings();
+    setSettings(saved);
+    settingsRef.current = saved;
+    const savedMessages = getMessages();
+    setMessages(savedMessages);
+    setReady(true);
+
+    if (savedMessages.length === 0) {
+      void runTutor([]);
+    }
+  }, [runTutor]);
+
+  const handleSend = useCallback(
+    (text: string) => {
+      if (loading) return;
+      const next = [...messages, { role: "user" as const, content: text }];
+      setMessages(next);
+      saveMessages(next);
+      void runTutor(next);
+    },
+    [loading, messages, runTutor],
+  );
+
+  const handleSettingsChange = useCallback((patch: Partial<TutorSettings>) => {
+    setSettings((prev) => {
+      const nextSettings = { ...prev, ...patch };
+      saveSettings(nextSettings);
+      settingsRef.current = nextSettings;
+      return nextSettings;
+    });
+  }, []);
+
+  const handleReset = useCallback(() => {
+    if (loading) return;
+    tts.stop();
+    clearMessages();
+    setMessages([]);
+    setError(null);
+    void runTutor([]);
+  }, [loading, runTutor, tts]);
+
   return (
-    <div className="space-y-6">
-      <section className="space-y-2">
-        <h1 className="text-2xl font-black tracking-tight">
-          配達判定（自転車・岡山市内向け MVP）
-        </h1>
-        <p className="text-base text-slate-700 dark:text-slate-300">
-          Uber Eats
-          の配達依頼を、報酬・時間・距離・配達先エリア・天候から
-          「行く／微妙／行かない」で素早く判定する補助ツールです。
-          配達中の操作ではなく、安全な場所で停止して使ってください。
-        </p>
-      </section>
-
-      <SafetyNotice />
-
-      <nav className="grid gap-3">
-        <Link
-          href="/analyze"
-          className="flex min-h-[64px] items-center justify-center rounded-2xl bg-emerald-600 px-6 text-lg font-bold text-white shadow active:scale-[0.98] dark:bg-emerald-500"
-        >
-          手入力で判定する
-        </Link>
-        <Link
-          href="/analyze?mode=ocr"
-          className="flex min-h-[64px] items-center justify-center rounded-2xl bg-sky-600 px-6 text-lg font-bold text-white shadow active:scale-[0.98] dark:bg-sky-500"
-        >
-          スクショをアップロードして判定
-        </Link>
-        <Link
-          href="/history"
-          className="flex min-h-[64px] items-center justify-center rounded-2xl border-2 border-slate-300 bg-white px-6 text-lg font-bold text-slate-800 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-        >
-          過去の判定履歴
-        </Link>
-        <Link
-          href="/settings"
-          className="flex min-h-[64px] items-center justify-center rounded-2xl border-2 border-slate-300 bg-white px-6 text-lg font-bold text-slate-800 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-        >
-          設定
-        </Link>
-      </nav>
-
-      <SafetyNotice compact />
+    <div className="flex h-[calc(100dvh-3.25rem)] flex-col">
+      <Toolbar
+        settings={settings}
+        ttsSupported={tts.supported}
+        onChange={handleSettingsChange}
+        onReset={handleReset}
+      />
+      <MessageList
+        messages={messages}
+        streaming={streaming}
+        loading={loading}
+        error={error}
+        ttsSupported={tts.supported}
+        onSpeak={tts.speak}
+      />
+      <Composer disabled={loading || !ready} onSend={handleSend} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // Minimal offline-capable service worker for MVP.
-const CACHE_NAME = "uber-eats-judge-v1";
+const CACHE_NAME = "english-tutor-v1";
 const PRECACHE_URLS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

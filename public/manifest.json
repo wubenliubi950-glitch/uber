@@ -1,7 +1,7 @@
 {
-  "name": "配達判定（Uber Eats 自転車）",
-  "short_name": "配達判定",
-  "description": "Uber Eats 配達依頼を素早く判定する補助ツール（岡山市内・自転車向け）",
+  "name": "英会話チューター（AI English Tutor）",
+  "short_name": "英会話チューター",
+  "description": "AI と英語で会話しながら、その場で添削を受けられる英会話練習アプリ。",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -4,13 +4,13 @@ import AppHeader from "@/components/AppHeader";
 import ServiceWorkerRegistrar from "./sw-register";
 
 export const metadata: Metadata = {
-  title: "配達判定 | Uber Eats 自転車配達 判定ツール",
+  title: "英会話チューター | AI English Tutor",
   description:
-    "Uber Eats 配達依頼を、報酬・時間・距離・配達先エリアから素早く「行く／微妙／行かない」で判定する補助ツール。",
+    "AI と英語で会話しながら、毎回そのばで添削（Good / Fix / Natural / Next）を受けられる英会話練習アプリ。読み上げと音声入力にも対応。",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "配達判定",
+    title: "英会話チューター",
     statusBarStyle: "default",
   },
 };
@@ -30,7 +30,7 @@ export default function RootLayout({
     <html lang="ja">
       <body className="min-h-full">
         <AppHeader />
-        <main className="mx-auto max-w-xl px-4 py-4 pb-24">{children}</main>
+        <main>{children}</main>
         <ServiceWorkerRegistrar />
       </body>
     </html>
